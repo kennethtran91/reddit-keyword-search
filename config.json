@@ -1,0 +1,28 @@
+{
+  "defaultKeywords": [
+    "need help with",
+    "struggling with",
+    "looking for solution",
+    "how do I",
+    "problem with",
+    "frustrated with"
+  ],
+  "defaultSubreddits": [
+    "all",
+    "productivity",
+    "smallbusiness",
+    "Entrepreneur",
+    "startups",
+    "SaaS"
+  ],
+  "defaultSort": "relevance",
+  "defaultTime": "month",
+  "defaultLimit": 25,
+  "notes": {
+    "defaultKeywords": "Keywords to search for. Customize these based on what problems your app solves.",
+    "defaultSubreddits": "Suggested subreddits to search. Users can select from these or type their own.",
+    "defaultSort": "Options: relevance, hot, top, new, comments",
+    "defaultTime": "Options: all, year, month, week, day, hour",
+    "defaultLimit": "Number of results to return (10, 25, 50, or 100)"
+  }
+}
