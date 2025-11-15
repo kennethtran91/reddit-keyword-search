@@ -1,6 +1,11 @@
 # Environment variables
 .env
 
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
 # Node modules
 node_modules/
 

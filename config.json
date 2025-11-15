@@ -1,4 +1,21 @@
 {
+  "monitoringKeywords": [
+    "interview preparation",
+    "mock interview",
+    "coding interview",
+    "technical interview",
+    "job interview help",
+    "interview practice"
+  ],
+  "monitoringSubreddits": [
+    "cscareerquestions",
+    "jobs",
+    "careerguidance",
+    "careeradvice",
+    "interviews"
+  ],
+  "monitoringInterval": "*/30 * * * *",
+  "minScoreThreshold": 60,
   "defaultKeywords": [
     "need help with",
     "struggling with",
@@ -19,6 +36,10 @@
   "defaultTime": "month",
   "defaultLimit": 25,
   "notes": {
+    "monitoringKeywords": "Keywords for automated monitoring - focused on interview prep",
+    "monitoringSubreddits": "Subreddits to monitor automatically",
+    "monitoringInterval": "Cron schedule (default: every 30 minutes)",
+    "minScoreThreshold": "Minimum AI score to notify as new lead (0-100)",
     "defaultKeywords": "Keywords to search for. Customize these based on what problems your app solves.",
     "defaultSubreddits": "Suggested subreddits to search. Users can select from these or type their own.",
     "defaultSort": "Options: relevance, hot, top, new, comments",

@@ -1,341 +1,431 @@
 # Reddit Lead Finder 🎯
 
-A web application for finding potential customers on Reddit - **powered by AI analysis!**
+**Automated AI-Powered Lead Generation System for Interview Prep SaaS**
 
-## 🎉 Zero Setup Required!
+An intelligent lead generation system that automatically monitors Reddit for potential customers, analyzes posts using AI, and presents qualified leads in a modern dashboard with real-time updates.
 
-This app uses Reddit's **public JSON endpoints** - no authentication, no API keys, no waiting for approval!
+## 🌟 Features
 
-## Features
+### Automated Monitoring
+- **Background Service**: Automatically searches Reddit every 30 minutes using public JSON endpoints
+- **No Authentication Required**: Uses Reddit's public JSON API - no credentials needed
+- **Scheduled Searches**: Configurable cron-based scheduling
+- **Multi-Keyword & Multi-Subreddit**: Monitor multiple subreddits and keywords simultaneously
 
-### Core Features
+### AI-Powered Analysis
+- **Gemini AI Integration**: Analyzes each post for relevance to your product
+- **Smart Scoring (0-100)**: AI rates each post's potential as a lead
+- **Pain Point Detection**: Identifies specific problems mentioned in posts
+- **Urgency Assessment**: Determines how urgent the user's need is
+- **Personalized Recommendations**: AI suggests how to approach each lead
 
-- 🚀 **No Authentication** - Works immediately, no Reddit API credentials needed
-- 🔍 **Keyword Search** - Search for single or multiple keywords
-- 🎯 **Subreddit Filtering** - Search specific subreddits or all of Reddit
-- 📊 **Sort Options** - Sort by relevance, hot, top, new
-- ⏰ **Time Filters** - Filter by hour, day, week, month, year, all time
+### Real-Time Dashboard
+- **Live Updates**: WebSocket connection pushes new leads instantly
+- **Modern UI**: Beautiful Tailwind CSS interface
+- **Lead Management**: Track leads through stages: New → Contacted → Interested → Converted
+- **Filtering**: Filter by status, minimum score, and more
+- **Statistics**: Real-time stats on total posts, analyzed leads, and conversion tracking
 
-### Lead Generation Features
+## 🏗️ Architecture
 
-- 🤖 **AI-Powered Analysis** - Gemini AI scores posts and identifies best leads
-- 💼 **Lead Management** - Save, track, and organize potential customers
-- 📝 **Status Tracking** - Track leads through: New → Contacted → Interested/Not Interested
-- 📊 **Smart Scoring** - AI ranks posts 0-100 based on likelihood to convert
-- � **Pitch Recommendations** - AI suggests how to approach each lead
-- 🎯 **Pain Point Detection** - AI identifies specific problems mentioned
-- 📈 **Urgency Detection** - Know which leads need immediate attention
-- 📤 **CSV Export** - Export all leads with notes for follow-up
-- 🎨 **Modern UI** - Clean, responsive Tailwind CSS interface
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     React Frontend                          │
+│  (Tailwind CSS, Real-time WebSocket Updates)               │
+└────────────────────┬────────────────────────────────────────┘
+                     │ HTTP/WebSocket
+┌────────────────────┴────────────────────────────────────────┐
+│                  Express Backend (Node.js)                  │
+│  - REST API Endpoints                                       │
+│  - WebSocket Server                                         │
+│  - Monitoring Service (Cron Scheduler)                      │
+└──┬──────────────────┬────────────────────┬──────────────────┘
+   │                  │                    │
+   │                  │                    │
+┌──▼──────────┐  ┌───▼────────────┐  ┌───▼──────────────┐
+│   Reddit    │  │ Gemini AI API  │  │  SQLite Database │
+│ Public JSON │  │  (Analysis)    │  │  (Lead Storage)  │
+└─────────────┘  └────────────────┘  └──────────────────┘
+```
 
-## Quick Start
+## 🚀 Quick Start
 
 ### 1. Install Dependencies
 
 ```bash
+# Install backend dependencies
 npm install
+
+# Install frontend dependencies
+cd client && npm install && cd ..
 ```
 
-### 2. (Optional) Enable AI Analysis
+### 2. Configure Environment
 
-Get a free Gemini API key from https://aistudio.google.com/app/apikey
+Create a `.env` file in the root directory:
 
-Add to `.env`:
+```env
+# Required: Gemini AI API Key for analysis
+GEMINI_API_KEY=your_gemini_api_key_here
 
+# Optional: Server configuration
+PORT=3001
 ```
-GEMINI_API_KEY=your_api_key_here
+
+**Get your free Gemini API key:**
+1. Visit https://aistudio.google.com/app/apikey
+2. Sign in with your Google account
+3. Click "Create API Key"
+4. Copy and paste into `.env`
+
+### 3. Configure Monitoring
+
+Edit `config.json` to customize what to search for:
+
+```json
+{
+  "monitoringKeywords": [
+    "interview preparation",
+    "mock interview",
+    "coding interview"
+  ],
+  "monitoringSubreddits": [
+    "cscareerquestions",
+    "jobs",
+    "careerguidance"
+  ],
+  "monitoringInterval": "*/30 * * * *",
+  "minScoreThreshold": 60
+}
 ```
 
-See [AI_SETUP.md](./AI_SETUP.md) for detailed instructions.
+### 4. Run the Application
 
-### 3. Run the App
+**Development mode (runs both backend and frontend):**
+```bash
+npm run dev
+```
 
+**Production mode (backend only):**
 ```bash
 npm start
 ```
 
-That's it! Open http://localhost:3000 and start finding leads!
+Then in another terminal:
+```bash
+cd client && npm start
+```
 
-## How It Works
+### 5. Access the Dashboard
 
-### Reddit Public JSON
+- **Frontend Dashboard**: http://localhost:3000
+- **Backend API**: http://localhost:3001
+- **API Health Check**: http://localhost:3001/api/health
 
-Reddit provides **public JSON feeds** for all public content by simply adding `.json` to any URL:
+## 📖 How It Works
 
-- Regular URL: `https://www.reddit.com/r/all/search?q=keyword`
-- JSON API: `https://www.reddit.com/r/all/search.json?q=keyword`
+### 1. Automated Monitoring
 
-No authentication required! This app uses these public endpoints to search Reddit.
+The monitoring service runs automatically when you start the server:
 
-### AI Analysis (Optional)
+```javascript
+// Runs on startup, then every 30 minutes
+monitoringService.start();
+```
 
-When you add a Gemini API key, the app analyzes each post to determine:
+**What happens each cycle:**
+1. Searches configured subreddits for keywords
+2. Finds new posts from the last 24 hours
+3. Filters out posts already in database
+4. Analyzes new posts with Gemini AI
+5. Saves high-scoring leads (score ≥ threshold)
+6. Broadcasts new leads to connected clients via WebSocket
 
-1. **Lead Quality Score (0-100)** - How likely they are to be interested
-2. **Pain Points** - Specific problems they mentioned
-3. **Urgency Level** - How soon they need help
-4. **Pitch Recommendation** - Exactly how to approach them
+### 2. AI Analysis
 
-## Use Case: AI Interview Prep SaaS
+Each post is analyzed by Gemini AI:
 
-This tool was built to find leads for an AI Interview Preparation SaaS. Here's the workflow:
+```
+Input: Reddit post (title, content, subreddit, author)
+  ↓
+Gemini AI analyzes for interview prep relevance
+  ↓
+Output:
+  - Score (0-100): How good is this lead?
+  - Reasoning: Why this score?
+  - Recommendation: How to approach them?
+  - Pain Points: What problems did they mention?
+  - Urgency: How urgent is their need?
+  - Should Reach: yes/maybe/no
+```
 
-1. **Search** for keywords like "interview preparation", "mock interview", "coding interview"
-2. **Analyze** posts with AI to find people actively seeking help
-3. **Save** promising leads with high AI scores
-4. **Track** who you've contacted and their status
-5. **Export** to CSV for CRM or follow-up system
-6. **Reach out** with personalized pitches based on AI recommendations
+### 3. Lead Management
 
-### Best Subreddits for Interview Prep Leads:
+Track leads through their lifecycle:
 
-- r/cscareerquestions
-- r/jobs
-- r/careeradvice
-- r/careerguidance
-- r/interviews
+```
+New → Contacted → Interested → Converted
+            ↓
+      Not Interested
+```
 
-## Configuration
+## 🔧 API Reference
 
-Edit `config.json` to customize default settings:
+### GET /api/leads
 
+Get all leads with optional filters.
+
+**Query Parameters:**
+- `status` - Filter by lead status (new, contacted, interested, not_interested, converted)
+- `minScore` - Minimum AI score (0-100)
+- `limit` - Max number of results (default: 100)
+
+**Example:**
+```bash
+GET /api/leads?status=new&minScore=70&limit=50
+```
+
+### GET /api/leads/:id
+
+Get a single lead by ID.
+
+### PATCH /api/leads/:id
+
+Update a lead's status.
+
+**Body:**
 ```json
 {
-  "defaultKeywords": ["problem with", "looking for solution", "need help with"],
-  "defaultSubreddits": ["all", "AskReddit", "webdev"],
-  "defaultSort": "relevance",
-  "defaultTime": "week",
-  "defaultLimit": 25
+  "status": "contacted",
+  "notes": "Sent initial message"
 }
 ```
 
-## API Usage
+### GET /api/stats
 
-### Search Endpoint
+Get database statistics including status breakdown.
 
-**POST** `/api/search`
+### GET /api/monitoring/status
 
-```javascript
+Get current monitoring service status and configuration.
+
+### POST /api/monitoring/search
+
+Trigger a manual search immediately.
+
+### PATCH /api/monitoring/config
+
+Update monitoring configuration.
+
+**Body:**
+```json
 {
-  "keywords": ["keyword1", "keyword2"], // or single string
-  "subreddit": "all",                    // or specific subreddit name
-  "sort": "relevance",                   // relevance, hot, top, new, comments
-  "time": "all",                         // hour, day, week, month, year, all
-  "limit": 25,                           // 1-100
-  "type": "link",                        // link, sr, user
-  "after": null,                         // For pagination
-  "before": null,                        // For pagination
-  "count": 0,                            // Items already seen
-  "restrict_sr": true,                   // Restrict to subreddit
-  "include_facets": false,               // Include facet data
-  "category": null                       // Category filter
+  "keywords": ["new keyword"],
+  "subreddits": ["newsubreddit"],
+  "interval": "*/15 * * * *",
+  "minScore": 70
 }
 ```
 
-**Response:**
-
-```javascript
-{
-  "success": true,
-  "query": {
-    "keyword": "search term",
-    "subreddit": "all",
-    "sort": "relevance",
-    "time": "all",
-    "limit": 25
-  },
-  "count": 25,
-  "posts": [ /* array of post objects */ ],
-  "after": "t3_abc123",  // Use for next page
-  "before": null,
-  "modhash": ""
-}
-```
-
-### Other Endpoints
-
-- `GET /api/health` - Check API status
-- `GET /api/config` - Get app configuration
-- `GET /api/subreddit/:name` - Get subreddit info
-
-## Project Structure
+## 📁 Project Structure
 
 ```
 reddit-keyword-search/
-├── server.js           # Express server
-├── redditApi.js        # Reddit API client (OAuth2)
-├── config.json         # App configuration
-├── package.json        # Dependencies
-├── .env               # Environment variables (create this)
-├── public/
-│   ├── index.html     # Frontend HTML
-│   ├── app.js         # Frontend JavaScript
-│   └── styles.css     # Styling
-└── README.md          # This file
+├── server-new.js              # Express server with WebSocket
+├── monitoringService.js       # Background monitoring service
+├── redditApi.js               # Reddit API client (public JSON)
+├── geminiService.js           # Gemini AI integration
+├── db.js                      # SQLite database operations
+├── config.json                # Monitoring configuration
+├── package.json               # Backend dependencies
+├── .env                       # Environment variables
+├── reddit_leads.db            # SQLite database (auto-created)
+│
+└── client/                    # React frontend
+    ├── src/
+    │   ├── App.js            # Main React component
+    │   ├── index.js          # React entry point
+    │   └── index.css         # Tailwind CSS styles
+    ├── public/
+    ├── package.json          # Frontend dependencies
+    └── .env                  # Frontend environment variables
 ```
 
-## Use Cases
+## 🎯 Customization for Your Product
 
-- **Market Research**: Find what problems people are discussing
-- **Product Validation**: See if your solution addresses real needs
-- **Content Ideas**: Discover trending topics in your niche
-- **Customer Discovery**: Understand pain points in communities
-- **Competitive Analysis**: See what alternatives people mention
+This system is currently configured for an **Interview Prep SaaS**. To adapt it for your product:
 
-## Rate Limits
+### 1. Update Keywords in `config.json`
 
-Reddit's API has rate limits:
+Replace with keywords relevant to your product:
 
-- **OAuth**: 60 requests per minute
-- This app uses OAuth2 client credentials flow
-- Implement delays between requests for multiple keywords
+```json
+{
+  "monitoringKeywords": [
+    "your product category",
+    "problem your product solves",
+    "customer pain point"
+  ]
+}
+```
 
-## Development
+### 2. Update Subreddits in `config.json`
 
-### Tech Stack
+Target subreddits where your customers hang out:
 
-- **Backend**: Node.js, Express
-- **Frontend**: Vanilla JavaScript, HTML, CSS
-- **API**: Reddit OAuth2 API
-- **HTTP Client**: Axios
+```json
+{
+  "monitoringSubreddits": [
+    "relevant_subreddit_1",
+    "relevant_subreddit_2"
+  ]
+}
+```
 
-### API Documentation
+### 3. Customize AI Prompt in `geminiService.js`
 
-- Official API: https://www.reddit.com/dev/api/
-- OAuth2: https://github.com/reddit/reddit/wiki/OAuth2
-- Search endpoint: https://www.reddit.com/dev/api/#GET_search
+Update the analysis prompt to match your product:
 
-## Troubleshooting
+```javascript
+const prompt = `You are an expert sales analyst for [YOUR PRODUCT].
 
-### Authentication Errors
+Analyze this Reddit post and determine if the poster is a good lead...`;
+```
 
-- Verify your client ID and secret are correct
-- Check that your user agent is properly formatted
-- Ensure you're using the correct OAuth2 flow (client credentials)
+## ⚙️ Configuration
 
-### No Results
+### Monitoring Interval (Cron Syntax)
 
-- Try different keywords or time filters
-- Check if the subreddit name is spelled correctly
-- Verify the subreddit exists and is public
+Default: `"*/30 * * * *"` (every 30 minutes)
 
-### API Rate Limits
+Common patterns:
+- Every 15 minutes: `"*/15 * * * *"`
+- Every hour: `"0 * * * *"`
+- Every 6 hours: `"0 */6 * * *"`
+- Daily at 9 AM: `"0 9 * * *"`
 
-- Reduce the number of concurrent searches
-- Implement delays between requests
-- Use larger limit values to get more results per request
+### Score Threshold
 
-## License
+`minScoreThreshold` in `config.json` determines which leads trigger notifications:
+- 60-69: Moderate leads
+- 70-79: Good leads
+- 80-89: Great leads
+- 90-100: Excellent leads
+
+## 🔍 Troubleshooting
+
+### No leads appearing?
+
+1. **Check monitoring status**: Visit http://localhost:3001/api/monitoring/status
+2. **Verify Gemini API key**: Check `.env` file
+3. **Check database**: Posts are saved even without AI analysis
+4. **Trigger manual search**: Click "Manual Search" button in dashboard
+
+### WebSocket not connecting?
+
+1. Ensure backend is running on port 3001
+2. Check browser console for WebSocket errors
+3. Verify `REACT_APP_WS_URL` in `client/.env`
+
+### AI analysis not working?
+
+1. Verify `GEMINI_API_KEY` in `.env`
+2. Check rate limits (30 requests/minute for free tier)
+3. Look for errors in server console
+
+## 📊 Database
+
+The app uses SQLite for simplicity. Database file: `reddit_leads.db`
+
+### Schema
+
+```sql
+CREATE TABLE posts (
+  id TEXT PRIMARY KEY,
+  title TEXT,
+  selftext TEXT,
+  author TEXT,
+  subreddit TEXT,
+  score INTEGER,
+  num_comments INTEGER,
+  created_utc INTEGER,
+  url TEXT,
+  permalink TEXT,
+  search_query TEXT,
+  analyzed INTEGER,
+  ai_score INTEGER,
+  ai_reasoning TEXT,
+  ai_recommendation TEXT,
+  ai_should_reach TEXT,
+  ai_pain_points TEXT,
+  ai_urgency TEXT,
+  lead_status TEXT,
+  lead_notes TEXT,
+  contacted_at DATETIME,
+  created_at DATETIME,
+  analyzed_at DATETIME,
+  updated_at DATETIME
+);
+```
+
+## 🚢 Deployment
+
+### Backend Deployment (Node.js)
+
+Deploy to platforms like:
+- **Railway**: Easy Node.js deployment
+- **Render**: Free tier available
+- **Heroku**: Classic PaaS
+- **DigitalOcean**: Full control
+
+### Frontend Deployment (React)
+
+Build and deploy frontend:
+
+```bash
+cd client
+npm run build
+```
+
+Deploy `build/` folder to:
+- **Vercel**: Best for React apps
+- **Netlify**: Great DX
+- **GitHub Pages**: Free hosting
+
+Update environment variables for production URLs.
+
+## 📝 License
 
 MIT
 
-## Contributing
+## 🤝 Contributing
 
-Pull requests welcome! Please ensure your code follows the existing style and includes appropriate documentation.
+Contributions welcome! Feel free to open issues or submit PRs.
 
-## Disclaimer
+## ⚠️ Disclaimer
 
-This application uses Reddit's API and must comply with:
-
-- [Reddit API Rules](https://support.reddithelp.com/hc/en-us/articles/16160319875092-Reddit-Data-API-Wiki)
-- [Reddit User Agreement](https://www.reddit.com/help/useragreement)
+This tool uses Reddit's public JSON API. Please use responsibly and comply with:
 - [Reddit API Terms](https://www.reddit.com/wiki/api)
+- [Reddit User Agreement](https://www.reddit.com/help/useragreement)
+- Respect rate limits and community guidelines
 
-Please use responsibly and respect rate limits.
+## 💡 Tips for Success
 
-## Features
+1. **Be Specific with Keywords**: Use long-tail keywords that indicate buying intent
+2. **Monitor Niche Subreddits**: Smaller, focused communities often have better leads
+3. **Respond Quickly**: Use real-time updates to be first to help
+4. **Provide Value First**: Don't just pitch - offer genuine help
+5. **Track Everything**: Use the lead management system to avoid duplicate outreach
+6. **Adjust AI Threshold**: Lower it to see more leads, raise it for quality over quantity
 
-- Search Reddit posts and comments for specific keywords
-- Filter by subreddit, time range, and sorting options
-- View results with links to original posts
-- Analyze potential customer pain points and discussions
+## 🎓 Use Cases Beyond Interview Prep
 
-## Getting Reddit API Credentials
+- SaaS lead generation
+- Product validation
+- Market research
+- Customer discovery
+- Competitive analysis
+- Content ideas
+- Pain point identification
 
-Follow these steps to get your Reddit API credentials:
-
-1. **Log in to Reddit**
-
-   - Go to https://www.reddit.com and log in with your account
-   - If you don't have an account, create one first
-
-2. **Create an App**
-
-   - Navigate to https://www.reddit.com/prefs/apps
-   - Scroll down and click "create another app..." or "are you a developer? create an app..."
-
-3. **Fill in the App Details**
-
-   - **Name**: Give your app a name (e.g., "Keyword Search Tool")
-   - **App type**: Select "script"
-   - **Description**: Optional, describe what your app does
-   - **About URL**: Leave blank or add your website
-   - **Redirect URI**: Enter `http://localhost:3000` (required even though we don't use it)
-   - Click "create app"
-
-4. **Get Your Credentials**
-
-   - After creating the app, you'll see it listed
-   - **Client ID**: The string under your app name (looks like: `AbCdEf123456`)
-   - **Client Secret**: The string labeled "secret" (looks like: `aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890`)
-
-5. **Save Your Credentials**
-   - Copy `.env.example` to `.env`
-   - Add your credentials to the `.env` file:
-     ```
-     REDDIT_CLIENT_ID=your_client_id_here
-     REDDIT_CLIENT_SECRET=your_client_secret_here
-     REDDIT_USER_AGENT=MyApp/1.0
-     ```
-
-## Installation
-
-1. Install dependencies:
-
-   ```bash
-   npm install
-   ```
-
-2. Set up your environment variables:
-
-   ```bash
-   cp .env.example .env
-   # Then edit .env with your Reddit API credentials
-   ```
-
-3. Configure your keywords in `config.json`
-
-## Usage
-
-1. Start the server:
-
-   ```bash
-   npm start
-   ```
-
-2. Open your browser and navigate to:
-
-   ```
-   http://localhost:3000
-   ```
-
-3. Enter keywords to search Reddit and view results
-
-## Configuration
-
-Edit `config.json` to customize:
-
-- Default search keywords
-- Default subreddits to search
-- Time ranges and result limits
-
-## API Rate Limits
-
-Reddit's API has rate limits:
-
-- 60 requests per minute for authenticated requests
-- Be mindful of these limits when running searches
-
-## License
-
-MIT
+Happy lead hunting! 🎯

@@ -1,24 +1,35 @@
 {
   "name": "reddit-keyword-search",
-  "version": "1.0.0",
-  "description": "Web app to search Reddit for keywords and problems that might be solved by your app",
+  "version": "2.0.0",
+  "description": "Automated Reddit lead finder with AI analysis - finds and scores potential customers for your product",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "concurrently \"node server.js\" \"npm run client\"",
+    "client": "cd client && npm start",
+    "build": "cd client && npm run build",
+    "install-all": "npm install && cd client && npm install"
   },
   "keywords": [
     "reddit",
-    "search",
-    "api",
-    "keyword"
+    "lead-generation",
+    "ai",
+    "gemini",
+    "automation"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "@google/genai": "^1.29.1",
     "axios": "^1.6.2",
+    "better-sqlite3": "^12.4.1",
+    "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "node-cron": "^3.0.3",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
   }
 }

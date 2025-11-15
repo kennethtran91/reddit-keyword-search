@@ -20,6 +20,24 @@ class GeminiService {
     console.log("✓ Gemini AI initialized");
   }
 
+  // Sanitize post data - extract only what's needed for AI analysis
+  sanitizePost(post) {
+    return {
+      id: post.id,
+      title: post.title,
+      // Truncate content to save tokens
+      content: post.selftext
+        ? post.selftext.length > 2000
+          ? post.selftext.substring(0, 2000) + "...[truncated]"
+          : post.selftext
+        : "",
+      subreddit: post.subreddit,
+      author: post.author,
+      score: post.score,
+      numComments: post.num_comments || post.numComments,
+    };
+  }
+
   async analyzePost(post) {
     if (!this.enabled) {
       return {
@@ -31,26 +49,22 @@ class GeminiService {
     }
 
     try {
-      // Truncate very long content to avoid hitting API limits
-      const truncatedContent = post.selftext
-        ? post.selftext.length > 2000
-          ? post.selftext.substring(0, 2000) + "...[truncated]"
-          : post.selftext
-        : "No content, just title";
+      // Sanitize the post data
+      const cleanPost = this.sanitizePost(post);
 
       const prompt = `You are an expert sales analyst for an AI Interview Preparation SaaS product that helps people practice mock interviews with AI.
 
 Analyze this Reddit post and determine if the poster is a good lead to pitch our AI Interview Prep tool to:
 
-**Post Title:** ${post.title}
+**Post Title:** ${cleanPost.title}
 
-**Post Content:** ${truncatedContent}
+**Post Content:** ${cleanPost.content || "No content, just title"}
 
-**Subreddit:** r/${post.subreddit}
+**Subreddit:** r/${cleanPost.subreddit}
 
-**Author:** u/${post.author}
+**Author:** u/${cleanPost.author}
 
-**Engagement:** ${post.score} upvotes, ${post.numComments} comments
+**Engagement:** ${cleanPost.score} upvotes, ${cleanPost.numComments} comments
 
 Provide a JSON response with:
 1. "score" (0-100): How good of a lead is this? 
@@ -128,9 +142,9 @@ Respond ONLY with valid JSON, no other text.`;
     for (let i = 0; i < posts.length; i++) {
       const post = posts[i];
 
-      // Add delay to respect rate limits (Gemini free tier: 60 requests/minute)
+      // Add delay to respect rate limits (Gemini free tier: 30 requests/minute)
       if (i > 0) {
-        await this.delay(1100); // ~1 second between requests
+        await this.delay(2100); // ~2 seconds between requests for 30 RPM
       }
 
       const analysis = await this.analyzePost(post);

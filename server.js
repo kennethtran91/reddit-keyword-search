@@ -1,264 +1,291 @@
 require("dotenv").config();
 const express = require("express");
-const path = require("path");
-const RedditAPI = require("./redditApi");
-const GeminiService = require("./geminiService");
+const cors = require("cors");
+const http = require("http");
+const WebSocket = require("ws");
+const MonitoringService = require("./monitoringService");
+const RedditDatabase = require("./db");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
 
-// Middleware - increase body size limit for AI analysis
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
-app.use(express.static("public"));
+const PORT = process.env.PORT || 3001;
 
-// Initialize Reddit API (NO AUTH REQUIRED!)
-const redditApi = new RedditAPI();
-console.log(
-  "✓ Reddit API initialized (using public JSON endpoints - no auth needed!)"
-);
+// Middleware
+app.use(cors());
+app.use(express.json());
 
-// Initialize Gemini AI
-const geminiService = new GeminiService(process.env.GEMINI_API_KEY);
+// Initialize services
+const db = new RedditDatabase();
+const monitoringService = new MonitoringService();
 
-// Routes
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+// WebSocket connection handling
+const clients = new Set();
+
+wss.on("connection", (ws) => {
+  console.log("📱 New WebSocket client connected");
+  clients.add(ws);
+
+  ws.on("close", () => {
+    console.log("📱 WebSocket client disconnected");
+    clients.delete(ws);
+  });
+
+  ws.on("error", (error) => {
+    console.error("WebSocket error:", error);
+    clients.delete(ws);
+  });
 });
 
-// Search endpoint
-app.post("/api/search", async (req, res) => {
-  try {
-    const {
-      keywords,
-      subreddit = "all",
-      sort = "relevance",
-      time = "all",
-      limit = 25,
-      after = null,
-      before = null,
-    } = req.body;
+// Broadcast new lead to all connected clients
+function broadcastNewLead(lead) {
+  const message = JSON.stringify({
+    type: "NEW_LEAD",
+    data: lead,
+  });
 
-    // Validate required parameters
-    if (!keywords || keywords.length === 0) {
-      return res.status(400).json({
-        error: "Keywords are required",
-        message: "Please provide at least one keyword to search for",
-      });
+  clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
     }
+  });
+}
 
-    // Validate limit
-    if (limit < 1 || limit > 100) {
-      return res.status(400).json({
-        error: "Invalid limit",
-        message: "Limit must be between 1 and 100",
-      });
-    }
-
-    let results;
-
-    if (Array.isArray(keywords) && keywords.length > 1) {
-      // Search for multiple keywords
-      results = await redditApi.searchMultipleKeywords(keywords, {
-        subreddit,
-        sort,
-        time,
-        limit,
-        after,
-        before,
-      });
-
-      // Format for multiple keyword results
-      res.json({
-        success: true,
-        query: {
-          keywords: keywords,
-          subreddit: subreddit,
-          sort: sort,
-          time: time,
-          limit: limit,
-        },
-        count: results.length,
-        results: results,
-        after: null, // Multiple keyword searches don't support pagination
-        before: null,
-      });
-    } else {
-      // Search for single keyword
-      const keyword = Array.isArray(keywords) ? keywords[0] : keywords;
-      results = await redditApi.search(keyword, {
-        subreddit,
-        sort,
-        time,
-        limit,
-        after,
-        before,
-      });
-
-      // Return results with pagination info
-      res.json({
-        success: true,
-        query: {
-          keyword: keyword,
-          subreddit: subreddit,
-          sort: sort,
-          time: time,
-          limit: limit,
-        },
-        count: results.count,
-        posts: results.posts,
-        after: results.after, // Use this to get the next page
-        before: results.before, // Use this to get the previous page
-        modhash: results.modhash,
-      });
-    }
-  } catch (error) {
-    console.error("Search error:", error);
-    res.status(500).json({
-      error: "Failed to search Reddit",
-      message: error.message,
-    });
-  }
+// Set callback for new leads
+monitoringService.setNewLeadCallback((lead) => {
+  console.log(`📢 Broadcasting new lead: ${lead.title}`);
+  broadcastNewLead(lead);
 });
 
-// AI Analysis endpoint
-app.post("/api/analyze", async (req, res) => {
-  try {
-    const { posts } = req.body;
-
-    if (!posts || !Array.isArray(posts) || posts.length === 0) {
-      return res.status(400).json({
-        error: "Invalid request",
-        message: "Please provide an array of posts to analyze",
-      });
-    }
-
-    if (!geminiService.enabled) {
-      return res.status(503).json({
-        error: "AI analysis not available",
-        message:
-          "Gemini API key not configured. Add GEMINI_API_KEY to your .env file",
-        getKeyAt: "https://aistudio.google.com/app/apikey",
-      });
-    }
-
-    // Analyze posts with progress updates via Server-Sent Events
-    // For now, we'll do a simple batch analysis
-    const analyzedPosts = await geminiService.analyzeBatch(
-      posts,
-      (current, total) => {
-        console.log(`Analyzing post ${current}/${total}...`);
-      }
-    );
-
-    res.json({
-      success: true,
-      analyzed: analyzedPosts.length,
-      posts: analyzedPosts,
-    });
-  } catch (error) {
-    console.error("AI analysis error:", error);
-    res.status(500).json({
-      error: "Failed to analyze posts",
-      message: error.message,
-    });
-  }
-});
-
-// Analyze single post endpoint
-app.post("/api/analyze-post", async (req, res) => {
-  try {
-    const { post } = req.body;
-
-    if (!post) {
-      return res.status(400).json({
-        error: "Invalid request",
-        message: "Please provide a post to analyze",
-      });
-    }
-
-    if (!geminiService.enabled) {
-      return res.status(503).json({
-        error: "AI analysis not available",
-        message: "Gemini API key not configured",
-        getKeyAt: "https://aistudio.google.com/app/apikey",
-      });
-    }
-
-    const analysis = await geminiService.analyzePost(post);
-
-    res.json({
-      success: true,
-      post: {
-        ...post,
-        aiAnalysis: analysis,
-      },
-    });
-  } catch (error) {
-    console.error("AI analysis error:", error);
-    res.status(500).json({
-      error: "Failed to analyze post",
-      message: error.message,
-    });
-  }
-});
-
-// Get subreddit info
-app.get("/api/subreddit/:name", async (req, res) => {
-  try {
-    const info = await redditApi.getSubredditInfo(req.params.name);
-
-    if (!info) {
-      return res.status(404).json({ error: "Subreddit not found" });
-    }
-
-    res.json(info);
-  } catch (error) {
-    console.error("Subreddit info error:", error);
-    res.status(500).json({
-      error: "Failed to get subreddit info",
-      message: error.message,
-    });
-  }
-});
+// API Routes
 
 // Health check
 app.get("/api/health", (req, res) => {
+  const status = monitoringService.getStatus();
   res.json({
     status: "ok",
-    apiConfigured: true,
-    authRequired: false,
-    method: "Public JSON endpoints",
-    aiEnabled: geminiService.enabled,
+    monitoring: status,
     timestamp: new Date().toISOString(),
   });
 });
 
-// Load config endpoint
-app.get("/api/config", (req, res) => {
+// Get all leads
+app.get("/api/leads", (req, res) => {
   try {
-    const config = require("./config.json");
-    res.json(config);
-  } catch (error) {
+    const { limit = 100, minScore = 0, status } = req.query;
+
+    let leads;
+    if (status) {
+      leads = db.getLeadsByStatus(status, parseInt(limit));
+    } else {
+      leads = db.getAnalyzedPosts(parseInt(limit), parseInt(minScore));
+    }
+
     res.json({
-      defaultKeywords: [],
-      defaultSubreddits: ["all"],
-      defaultSort: "relevance",
-      defaultTime: "all",
-      defaultLimit: 25,
+      success: true,
+      count: leads.length,
+      leads: leads,
+    });
+  } catch (error) {
+    console.error("Get leads error:", error);
+    res.status(500).json({
+      error: "Failed to get leads",
+      message: error.message,
     });
   }
 });
 
-// Start server
-app.listen(PORT, () => {
+// Get single lead
+app.get("/api/leads/:id", (req, res) => {
+  try {
+    const lead = db.getPost(req.params.id);
+
+    if (!lead) {
+      return res.status(404).json({
+        error: "Lead not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      lead: lead,
+    });
+  } catch (error) {
+    console.error("Get lead error:", error);
+    res.status(500).json({
+      error: "Failed to get lead",
+      message: error.message,
+    });
+  }
+});
+
+// Update lead status
+app.patch("/api/leads/:id", (req, res) => {
+  try {
+    const { status, notes } = req.body;
+
+    if (!status) {
+      return res.status(400).json({
+        error: "Status is required",
+      });
+    }
+
+    const validStatuses = [
+      "new",
+      "contacted",
+      "interested",
+      "not_interested",
+      "converted",
+    ];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        error: "Invalid status",
+        message: `Status must be one of: ${validStatuses.join(", ")}`,
+      });
+    }
+
+    const updated = db.updateLeadStatus(req.params.id, status, notes);
+
+    if (!updated) {
+      return res.status(404).json({
+        error: "Lead not found or update failed",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Lead updated successfully",
+    });
+  } catch (error) {
+    console.error("Update lead error:", error);
+    res.status(500).json({
+      error: "Failed to update lead",
+      message: error.message,
+    });
+  }
+});
+
+// Get database statistics
+app.get("/api/stats", (req, res) => {
+  try {
+    const stats = db.getStats();
+
+    // Get status breakdown
+    const statusBreakdown = {
+      new: db.getLeadsByStatus("new", 1000).length,
+      contacted: db.getLeadsByStatus("contacted", 1000).length,
+      interested: db.getLeadsByStatus("interested", 1000).length,
+      not_interested: db.getLeadsByStatus("not_interested", 1000).length,
+      converted: db.getLeadsByStatus("converted", 1000).length,
+    };
+
+    res.json({
+      success: true,
+      stats: {
+        ...stats,
+        statusBreakdown,
+      },
+    });
+  } catch (error) {
+    console.error("Stats error:", error);
+    res.status(500).json({
+      error: "Failed to get stats",
+      message: error.message,
+    });
+  }
+});
+
+// Get monitoring status
+app.get("/api/monitoring/status", (req, res) => {
+  try {
+    const status = monitoringService.getStatus();
+    res.json({
+      success: true,
+      ...status,
+    });
+  } catch (error) {
+    console.error("Monitoring status error:", error);
+    res.status(500).json({
+      error: "Failed to get monitoring status",
+      message: error.message,
+    });
+  }
+});
+
+// Trigger manual search
+app.post("/api/monitoring/search", async (req, res) => {
+  try {
+    // Don't wait for completion, respond immediately
+    res.json({
+      success: true,
+      message: "Manual search started",
+    });
+
+    // Run search in background
+    monitoringService.runManual();
+  } catch (error) {
+    console.error("Manual search error:", error);
+    res.status(500).json({
+      error: "Failed to start manual search",
+      message: error.message,
+    });
+  }
+});
+
+// Update monitoring configuration
+app.patch("/api/monitoring/config", (req, res) => {
+  try {
+    const { keywords, subreddits, interval, minScore } = req.body;
+
+    const newConfig = {};
+    if (keywords) newConfig.keywords = keywords;
+    if (subreddits) newConfig.subreddits = subreddits;
+    if (interval) newConfig.interval = interval;
+    if (minScore !== undefined) newConfig.minScore = minScore;
+
+    monitoringService.updateConfig(newConfig);
+
+    res.json({
+      success: true,
+      message: "Configuration updated",
+      config: monitoringService.config,
+    });
+  } catch (error) {
+    console.error("Update config error:", error);
+    res.status(500).json({
+      error: "Failed to update configuration",
+      message: error.message,
+    });
+  }
+});
+
+// Start server and monitoring
+server.listen(PORT, () => {
+  console.log(`\n🚀 Server running on http://localhost:${PORT}`);
+  console.log(`🔌 WebSocket server ready`);
+  console.log(`\n📊 API Endpoints:`);
+  console.log(`   GET  /api/health - Health check`);
+  console.log(`   GET  /api/leads - Get all leads`);
+  console.log(`   GET  /api/leads/:id - Get single lead`);
+  console.log(`   PATCH /api/leads/:id - Update lead status`);
+  console.log(`   GET  /api/stats - Database statistics`);
+  console.log(`   GET  /api/monitoring/status - Monitoring status`);
+  console.log(`   POST /api/monitoring/search - Trigger manual search`);
+  console.log(`   PATCH /api/monitoring/config - Update configuration`);
   console.log(
-    `\n🚀 Reddit Keyword Search app running on http://localhost:${PORT}`
+    `\n💡 Manual Mode: Click "Find New Leads" button in the dashboard to search`
   );
-  console.log(`\n✓ Using public JSON endpoints - NO AUTHENTICATION REQUIRED!`);
-  console.log(`✓ No Reddit API credentials needed`);
-  console.log(`✓ No rate limit restrictions`);
-  console.log(
-    `\n💡 Tip: You can search any public subreddit without any setup!\n`
-  );
+  console.log(`📊 Open http://localhost:3000 to access the dashboard\n`);
+});
+
+// Graceful shutdown
+process.on("SIGINT", () => {
+  console.log("\n\n🛑 Shutting down gracefully...");
+  monitoringService.stop();
+  db.close();
+  server.close(() => {
+    console.log("✓ Server closed");
+    process.exit(0);
+  });
 });
