@@ -165,6 +165,26 @@ Respond ONLY with valid JSON, no other text.`;
   delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
+
+  async generateMessage(prompt) {
+    if (!this.enabled) {
+      throw new Error(
+        "Gemini AI is not configured. Add GEMINI_API_KEY to .env"
+      );
+    }
+
+    try {
+      const response = await this.ai.models.generateContent({
+        model: "gemini-2.0-flash-lite",
+        contents: prompt,
+      });
+
+      return response.text.trim();
+    } catch (error) {
+      console.error("Gemini message generation error:", error.message);
+      throw error;
+    }
+  }
 }
 
 module.exports = GeminiService;

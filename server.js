@@ -5,6 +5,7 @@ const http = require("http");
 const WebSocket = require("ws");
 const MonitoringService = require("./monitoringService");
 const RedditDatabase = require("./db");
+const GeminiService = require("./geminiService");
 
 const app = express();
 const server = http.createServer(app);
@@ -19,6 +20,7 @@ app.use(express.json());
 // Initialize services
 const db = new RedditDatabase();
 const monitoringService = new MonitoringService();
+const geminiService = new GeminiService(process.env.GEMINI_API_KEY);
 
 // WebSocket connection handling
 const clients = new Set();
@@ -166,6 +168,113 @@ app.patch("/api/leads/:id", (req, res) => {
   }
 });
 
+// Delete lead
+app.delete("/api/leads/:id", (req, res) => {
+  try {
+    const deleted = db.deleteLead(req.params.id);
+
+    if (!deleted) {
+      return res.status(404).json({
+        error: "Lead not found or delete failed",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Lead deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete lead error:", error);
+    res.status(500).json({
+      error: "Failed to delete lead",
+      message: error.message,
+    });
+  }
+});
+
+// Bulk delete leads - preview count
+app.post("/api/leads/bulk/preview", (req, res) => {
+  try {
+    const { minScore, maxDaysOld, status } = req.body;
+
+    console.log("Bulk delete preview request:", {
+      minScore,
+      maxDaysOld,
+      status,
+    });
+
+    // Validate that at least one filter is set
+    const hasMinScore = minScore !== undefined && minScore !== null;
+    const hasMaxDaysOld = maxDaysOld !== undefined && maxDaysOld !== null;
+    const hasStatus = status !== undefined && status !== null && status !== "";
+
+    if (!hasMinScore && !hasMaxDaysOld && !hasStatus) {
+      return res.status(400).json({
+        error:
+          "Must specify at least one filter: minScore, maxDaysOld, or status",
+      });
+    }
+
+    const count = db.countBulkDeleteLeads({
+      minScore: hasMinScore ? minScore : null,
+      maxDaysOld: hasMaxDaysOld ? maxDaysOld : null,
+      status: hasStatus ? status : null,
+    });
+
+    res.json({
+      success: true,
+      count,
+    });
+  } catch (error) {
+    console.error("Bulk delete preview error:", error);
+    res.status(500).json({
+      error: "Failed to preview bulk delete",
+      message: error.message,
+    });
+  }
+});
+
+// Bulk delete leads
+app.post("/api/leads/bulk/delete", (req, res) => {
+  try {
+    const { minScore, maxDaysOld, status } = req.body;
+
+    console.log("Bulk delete request:", { minScore, maxDaysOld, status });
+
+    // Validate that at least one filter is set
+    const hasMinScore = minScore !== undefined && minScore !== null;
+    const hasMaxDaysOld = maxDaysOld !== undefined && maxDaysOld !== null;
+    const hasStatus = status !== undefined && status !== null && status !== "";
+
+    if (!hasMinScore && !hasMaxDaysOld && !hasStatus) {
+      return res.status(400).json({
+        error:
+          "Must specify at least one filter: minScore, maxDaysOld, or status",
+      });
+    }
+
+    const deletedCount = db.bulkDeleteLeads({
+      minScore: hasMinScore ? minScore : null,
+      maxDaysOld: hasMaxDaysOld ? maxDaysOld : null,
+      status: hasStatus ? status : null,
+    });
+
+    console.log("Bulk delete completed:", deletedCount, "leads deleted");
+
+    res.json({
+      success: true,
+      message: `Deleted ${deletedCount} leads`,
+      deletedCount,
+    });
+  } catch (error) {
+    console.error("Bulk delete error:", error);
+    res.status(500).json({
+      error: "Failed to bulk delete leads",
+      message: error.message,
+    });
+  }
+});
+
 // Get database statistics
 app.get("/api/stats", (req, res) => {
   try {
@@ -208,6 +317,41 @@ app.get("/api/monitoring/status", (req, res) => {
     console.error("Monitoring status error:", error);
     res.status(500).json({
       error: "Failed to get monitoring status",
+      message: error.message,
+    });
+  }
+});
+
+// Generate pitch message using Gemini AI
+app.post("/api/leads/:id/generate-pitch", async (req, res) => {
+  try {
+    const { recommendation, author } = req.body;
+
+    if (!recommendation || !author) {
+      return res.status(400).json({
+        error: "Missing required fields: recommendation, author",
+      });
+    }
+
+    const prompt = `Based on this insight: "${recommendation}"
+
+Write a short, friendly, conversational pitch message (2-3 sentences max) for u/${author} to introduce MockPilot (https://mockpilot.app), an app for interview prep.
+
+Keep it casual, relatable, and NOT salesy or pushy. Just mention how MockPilot might help with their specific need.
+Mention that it's open to feedback for trying it out, and paid plan just covers API costs; free tier usually enough.
+
+Output ONLY the message, nothing else. No quotes, no formatting.`;
+
+    const pitchMessage = await geminiService.generateMessage(prompt);
+
+    res.json({
+      success: true,
+      message: pitchMessage,
+    });
+  } catch (error) {
+    console.error("Generate pitch error:", error);
+    res.status(500).json({
+      error: "Failed to generate pitch message",
       message: error.message,
     });
   }

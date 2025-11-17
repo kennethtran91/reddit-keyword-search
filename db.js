@@ -274,6 +274,96 @@ class RedditDatabase {
     return posts.map(this.parsePainPoints);
   }
 
+  // Delete lead
+  deleteLead(postId) {
+    const stmt = this.db.prepare(`
+      DELETE FROM posts WHERE id = ?
+    `);
+
+    try {
+      const result = stmt.run(postId);
+      return result.changes > 0;
+    } catch (error) {
+      console.error("Error deleting lead:", error.message);
+      return false;
+    }
+  }
+
+  // Bulk delete leads based on filters
+  bulkDeleteLeads(filters = {}) {
+    let query = "DELETE FROM posts WHERE analyzed = 1";
+    const params = [];
+
+    // Filter by max score (delete leads below a certain score)
+    if (filters.minScore !== undefined && filters.minScore !== null) {
+      query += " AND ai_score < ?";
+      params.push(filters.minScore);
+    }
+
+    // Filter by age (delete leads older than X days)
+    if (filters.maxDaysOld !== undefined && filters.maxDaysOld !== null) {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - filters.maxDaysOld);
+      query += " AND created_at < ?";
+      params.push(cutoffDate.toISOString());
+    }
+
+    // Filter by status (only delete certain statuses)
+    if (filters.status) {
+      query += " AND lead_status = ?";
+      params.push(filters.status);
+    }
+
+    console.log("Bulk delete query:", query);
+    console.log("Bulk delete params:", params);
+
+    try {
+      const stmt = this.db.prepare(query);
+      const result = stmt.run(...params);
+      console.log("Deleted", result.changes, "leads");
+      return result.changes || 0;
+    } catch (error) {
+      console.error("Error bulk deleting leads:", error.message);
+      console.error("Error stack:", error.stack);
+      return 0;
+    }
+  }
+
+  // Count leads that would be deleted (preview)
+  countBulkDeleteLeads(filters = {}) {
+    let query = "SELECT COUNT(*) as count FROM posts WHERE analyzed = 1";
+    const params = [];
+
+    // Filter by max score (delete leads below a certain score)
+    if (filters.minScore !== undefined && filters.minScore !== null) {
+      query += " AND ai_score < ?";
+      params.push(filters.minScore);
+    }
+
+    // Filter by age (delete leads older than X days)
+    if (filters.maxDaysOld !== undefined && filters.maxDaysOld !== null) {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - filters.maxDaysOld);
+      query += " AND created_at < ?";
+      params.push(cutoffDate.toISOString());
+    }
+
+    // Filter by status (only delete certain statuses)
+    if (filters.status) {
+      query += " AND lead_status = ?";
+      params.push(filters.status);
+    }
+
+    try {
+      const stmt = this.db.prepare(query);
+      const result = stmt.get(...params);
+      return result.count || 0;
+    } catch (error) {
+      console.error("Error counting bulk delete leads:", error.message);
+      return 0;
+    }
+  }
+
   // Helper to parse pain points JSON
   parsePainPoints(post) {
     if (post && post.ai_pain_points) {

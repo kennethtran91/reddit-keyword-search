@@ -11,6 +11,13 @@ function App() {
   const [minScore, setMinScore] = useState(0);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
+  const [bulkDeleteFilters, setBulkDeleteFilters] = useState({
+    minScore: null,
+    maxDaysOld: null,
+    status: null,
+  });
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // Fetch leads
   const fetchLeads = useCallback(async () => {
@@ -77,6 +84,158 @@ function App() {
       }
     } catch (error) {
       console.error("Error updating lead:", error);
+    }
+  };
+
+  // Delete lead
+  const deleteLead = async (leadId, leadTitle) => {
+    // Confirm deletion
+    if (
+      !window.confirm(
+        `Are you sure you want to delete this lead?\n\n"${leadTitle}"\n\nThis action cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/leads/${leadId}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        // Refresh leads and stats
+        fetchLeads();
+        fetchStats();
+      } else {
+        alert("Failed to delete lead. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error deleting lead:", error);
+      alert("Failed to delete lead. Please try again.");
+    }
+  };
+
+  // Generate AI pitch message
+  const generatePitchMessage = async (recommendation, authorName) => {
+    try {
+      const response = await fetch(
+        `${API_URL}/api/leads/${authorName}/generate-pitch`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            recommendation,
+            author: authorName,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Copy generated message to clipboard
+        navigator.clipboard.writeText(data.message);
+        alert(
+          "✅ Pitch message generated and copied to clipboard!\n\nHere's your personalized pitch:\n\n" +
+            data.message
+        );
+      } else {
+        alert("Failed to generate pitch. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error generating pitch:", error);
+      alert("Failed to generate pitch. Please try again.");
+    }
+  };
+
+  // Bulk delete leads
+  const performBulkDelete = async () => {
+    // Validate that at least one filter is set
+    if (
+      !bulkDeleteFilters.minScore &&
+      !bulkDeleteFilters.maxDaysOld &&
+      !bulkDeleteFilters.status
+    ) {
+      alert("Please set at least one filter (score, age, or status)");
+      return;
+    }
+
+    try {
+      // First, get preview count
+      const previewResponse = await fetch(`${API_URL}/api/leads/bulk/preview`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(bulkDeleteFilters),
+      });
+
+      const previewData = await previewResponse.json();
+
+      if (!previewData.success) {
+        alert("Failed to preview deletion. Please try again.");
+        return;
+      }
+
+      if (previewData.count === 0) {
+        alert("No leads match the selected filters. Nothing to delete.");
+        return;
+      }
+
+      // Confirm bulk delete with count
+      const filterSummary = [
+        bulkDeleteFilters.minScore &&
+          `score below ${bulkDeleteFilters.minScore}`,
+        bulkDeleteFilters.maxDaysOld &&
+          `older than ${bulkDeleteFilters.maxDaysOld} days`,
+        bulkDeleteFilters.status && `status: ${bulkDeleteFilters.status}`,
+      ]
+        .filter(Boolean)
+        .join(", ");
+
+      if (
+        !window.confirm(
+          `⚠️ This will delete ${previewData.count} lead(s) with: ${filterSummary}\n\nThis action cannot be undone. Continue?`
+        )
+      ) {
+        return;
+      }
+
+      setBulkDeleting(true);
+      const response = await fetch(`${API_URL}/api/leads/bulk/delete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(bulkDeleteFilters),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert(`✅ Successfully deleted ${data.deletedCount} leads`);
+        // Reset filters and close modal
+        setBulkDeleteFilters({
+          minScore: null,
+          maxDaysOld: null,
+          status: null,
+        });
+        setShowBulkDelete(false);
+        // Refresh leads and stats
+        fetchLeads();
+        fetchStats();
+      } else {
+        alert(`Failed to delete leads: ${data.error || "Unknown error"}`);
+      }
+    } catch (error) {
+      console.error("Error bulk deleting leads:", error);
+      alert("Failed to delete leads. Please try again.");
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -171,8 +330,19 @@ function App() {
   };
 
   // Format date
-  const formatDate = (timestamp) => {
-    return new Date(timestamp * 1000).toLocaleDateString("en-US", {
+  const formatDate = (timestamp, fallback) => {
+    let dateObj = null;
+    if (typeof timestamp === "number" && !isNaN(timestamp) && timestamp > 0) {
+      dateObj = new Date(timestamp * 1000);
+    } else if (fallback && typeof fallback === "string") {
+      // Try to parse fallback (created_at) as ISO string or SQLite DATETIME
+      const parsed = Date.parse(fallback);
+      if (!isNaN(parsed)) {
+        dateObj = new Date(parsed);
+      }
+    }
+    if (!dateObj || isNaN(dateObj.getTime())) return "N/A";
+    return dateObj.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
       hour: "2-digit",
@@ -344,7 +514,106 @@ function App() {
             <div className="text-sm text-gray-600">
               Showing {leads.length} leads
             </div>
+            <button
+              onClick={() => setShowBulkDelete(!showBulkDelete)}
+              className="ml-auto px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium"
+            >
+              🗑️ Bulk Delete
+            </button>
           </div>
+
+          {/* Bulk Delete Panel */}
+          {showBulkDelete && (
+            <div className="mt-4 bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-orange-900 mb-4">
+                Bulk Delete Leads - Select Filters
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                  <label className="text-sm font-medium text-orange-900 block mb-2">
+                    Delete leads with score BELOW:
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="e.g., 50"
+                    value={bulkDeleteFilters.minScore || ""}
+                    onChange={(e) =>
+                      setBulkDeleteFilters({
+                        ...bulkDeleteFilters,
+                        minScore: e.target.value
+                          ? Number(e.target.value)
+                          : null,
+                      })
+                    }
+                    className="w-full border border-orange-300 rounded px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-orange-900 block mb-2">
+                    Delete leads older than (days):
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="e.g., 30"
+                    value={bulkDeleteFilters.maxDaysOld || ""}
+                    onChange={(e) =>
+                      setBulkDeleteFilters({
+                        ...bulkDeleteFilters,
+                        maxDaysOld: e.target.value
+                          ? Number(e.target.value)
+                          : null,
+                      })
+                    }
+                    className="w-full border border-orange-300 rounded px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-orange-900 block mb-2">
+                    Delete leads with status:
+                  </label>
+                  <select
+                    value={bulkDeleteFilters.status || ""}
+                    onChange={(e) =>
+                      setBulkDeleteFilters({
+                        ...bulkDeleteFilters,
+                        status: e.target.value || null,
+                      })
+                    }
+                    className="w-full border border-orange-300 rounded px-3 py-2 text-sm"
+                  >
+                    <option value="">Any Status</option>
+                    <option value="new">New</option>
+                    <option value="contacted">Contacted</option>
+                    <option value="interested">Interested</option>
+                    <option value="not_interested">Not Interested</option>
+                    <option value="converted">Converted</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={performBulkDelete}
+                  disabled={bulkDeleting}
+                  className={`px-4 py-2 rounded font-medium text-sm ${
+                    bulkDeleting
+                      ? "bg-gray-400 text-gray-200 cursor-not-allowed"
+                      : "bg-red-600 text-white hover:bg-red-700"
+                  }`}
+                >
+                  {bulkDeleting ? "Deleting..." : "🔥 Confirm Bulk Delete"}
+                </button>
+                <button
+                  onClick={() => setShowBulkDelete(false)}
+                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 font-medium text-sm"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -401,7 +670,7 @@ function App() {
                     )}
                   </div>
                   <div className="text-right text-sm text-gray-500">
-                    {formatDate(lead.created_utc)}
+                    {formatDate(lead.created_utc, lead.created_at)}
                   </div>
                 </div>
 
@@ -423,6 +692,18 @@ function App() {
                       <p className="text-sm text-gray-600">
                         {lead.ai_recommendation}
                       </p>
+                      <button
+                        onClick={() =>
+                          generatePitchMessage(
+                            lead.ai_recommendation,
+                            lead.author
+                          )
+                        }
+                        className="mt-3 px-3 py-1 bg-indigo-600 text-white rounded text-xs font-medium hover:bg-indigo-700"
+                        title="Generate a pitch message based on this recommendation"
+                      >
+                        ✨ Generate Pitch
+                      </button>
                     </div>
                   </div>
 
@@ -464,6 +745,13 @@ function App() {
                     >
                       Message u/{lead.author}
                     </a>
+                    <button
+                      onClick={() => deleteLead(lead.id, lead.title)}
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
+                      title="Delete this lead"
+                    >
+                      🗑️ Delete
+                    </button>
                   </div>
                   <div className="flex gap-2">
                     {lead.lead_status === "new" && (
